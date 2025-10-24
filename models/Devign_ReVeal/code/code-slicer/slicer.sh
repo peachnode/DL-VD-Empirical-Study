@@ -1,15 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 if [[ $# -eq 3 ]]; then
-    inpdir=$1;
-    filename=$2;
-    outdir=$3;
-    rm -rf parsed tmp
-    mkdir -p 'tmp'
-    cp $inpdir'/'$filename 'tmp/'$filename
-    ./joern/joern-parse tmp/
-    cp -r parsed/* $outdir
+  inpdir=$1
+  filename=$2
+  outdir=$3
+
+  script_dir="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  workdir="$(mktemp -d)"
+  trap 'rm -rf "$workdir"' EXIT
+
+  mkdir -p "$workdir/tmp" "$outdir"
+  cp "$inpdir/$filename" "$workdir/tmp/$filename"
+
+  ( cd "$workdir" && "$script_dir/joern/joern-parse" tmp/ )
+
+  if compgen -G "$workdir/parsed/*" > /dev/null; then
+    cp -r "$workdir/parsed/"* "$outdir/"
+  fi
 else
   echo 'Wrong Argument!.'
-  echo 'slicer.sh <Directory of the C File> <Name of the C File> <Line For Slice> <Output Directory> <DataFlowOnly(Optional, used if mentioned)>'
+  echo 'Usage: slicer.sh <Directory of the C File> <Name of the C File> <Output Directory>'
 fi
-
-# TS_SOCKET=/tmp/socket.devign tsp -L parse while read f; do bash slicer.sh ../data/MSR/raw_code $f ../data/MSR/parsed; done < <(ls ../data/MSR/raw_code)

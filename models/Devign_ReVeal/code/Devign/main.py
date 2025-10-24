@@ -46,12 +46,16 @@ if __name__ == '__main__':
     parser.add_argument('--save_after_ggnn', action="store_true", help='Evaluate all examples and export them')
     parser.add_argument('--stop_after_dataset', action="store_true", help='Stop after loading the dataset')
     parser.add_argument('--no_split', action="store_true", help='Do not split data')
+    parser.add_argument('--vulnerable-labels', type=int, nargs='+', default=[1],
+                        help='Space separated list of labels considered vulnerable. '
+                             'Provide the same set used when generating dataset splits.')
     parser.add_argument('--model_bruh')
     parser.add_argument('--mega_cool_mode', action="store_true")
     parser.add_argument('--shport', action="store_true")
     args = parser.parse_args()
 
     # random seed all
+    args.vulnerable_labels = set(args.vulnerable_labels)
     has_cuda = torch.cuda.is_available() and (args.no_cuda is False)
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -71,13 +75,16 @@ if __name__ == '__main__':
     if os.path.exists(processed_data_path):
         debug('Reading already processed data from %s!' % processed_data_path)
         dataset = pickle.load(open(processed_data_path, 'rb'))
+        dataset.set_vulnerable_labels(args.vulnerable_labels)
     else:
         dataset = DataSet(all_src=all_src,
                           batch_size=args.batch_size,
                           n_ident=args.node_tag,
                           g_ident=args.graph_tag,
                           l_ident=args.label_tag,
-                          dsname=args.dataset)
+                          dsname=args.dataset,
+                          vulnerable_labels=args.vulnerable_labels)
+        dataset.set_vulnerable_labels(args.vulnerable_labels)
         file = open(processed_data_path, 'wb')
         pickle.dump(dataset, file)
         file.close()

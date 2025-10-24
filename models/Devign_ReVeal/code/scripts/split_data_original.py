@@ -34,11 +34,13 @@ data/line_ggnn/devign/v5/valid_GGNNinput.jsonlines: 2405: 100%|█████�
 data/line_ggnn/devign/v5/test_GGNNinput.jsonlines: 4814: 100%|███████████████████████████████████████████████████████████████████████| 4814/4814 [00:18<00:00, 262.36it/s]
 """
 
-import argparse, os
+import argparse
+import os
+
 import jsonlines
 import numpy as np
-from tqdm import tqdm
 import pandas as pd
+from tqdm import tqdm
 
 
 def split_and_save(output_dir, buggy, non_buggy, seed):
@@ -75,50 +77,80 @@ def split_and_save(output_dir, buggy, non_buggy, seed):
     df.to_csv(os.path.join(output_dir, "splits.csv"))
 
 
+def parse_vulnerable_labels(values):
+    """Return a sorted list of the labels that should be treated as vulnerable."""
+    if not values:
+        return [1]
+    labels = set()
+    for value in values:
+        for chunk in value.split(','):
+            part = chunk.strip()
+            if not part:
+                continue
+            try:
+                labels.add(int(part))
+            except ValueError as exc:
+                raise argparse.ArgumentTypeError(f"Invalid label '{part}'") from exc
+    if not labels:
+        raise argparse.ArgumentTypeError('At least one vulnerable label must be provided')
+    return sorted(labels)
+
+
+def main():
+    data_dir = 'data/line_ggnn/'
+    default_input = os.path.join(data_dir, 'devign-line_ggnn.jsonlines')
+    default_output = os.path.join(data_dir, 'devign') + '/'
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input', help='Path of the input file', default=default_input)
+    parser.add_argument('--output', help='Output Directory', default=default_output)
+    parser.add_argument('--repeat_count', help='Number of times to be repeated', default=5, type=int)
+    parser.add_argument('--hold_out', help='Hold out extra percentage of data', default=None, type=int)
+    parser.add_argument(
+        '--vulnerable-labels',
+        help='Labels that should be treated as vulnerable (comma- or space-separated integers)',
+        nargs='*',
+        default=None,
+    )
+    args = parser.parse_args()
+    vulnerable_labels = set(parse_vulnerable_labels(args.vulnerable_labels))
+
+    assert args.hold_out is None or (0 <= args.hold_out <= 100)
+    print(args.input, args.output, args.hold_out)
+    print('Vulnerable labels:', sorted(vulnerable_labels))
+
+    # Load data
+    input_data = []
+    with jsonlines.open(args.input) as reader:
+        for obj in tqdm(reader, desc="Reading data"):
+            input_data.append(obj)
+    print('Finish Reading data, #examples', len(input_data))
+
+    buggy = []
+    non_buggy = []
+    for i, example in enumerate(tqdm(input_data)):
+        target = example['targets'][0][0]
+        if target in vulnerable_labels:
+            buggy.append(i)
+        else:
+            non_buggy.append(i)
+    print('Read data:', 'Buggy', len(buggy), 'Non Buggy', len(non_buggy))
+    if not os.path.exists(args.output):
+        os.mkdir(args.output)
+
+    # Shuffle
+    random_state = np.random.RandomState(seed=0)
+    random_state.shuffle(buggy)
+    random_state.shuffle(non_buggy)
+
+    # Split up rest of dataset
+    print('Final counts:', 'Buggy', len(buggy), 'Non Buggy', len(non_buggy))
+    for r in range(1, args.repeat_count + 1):
+        output_dir = os.path.join(args.output, 'v' + str(r))
+        if not os.path.exists(output_dir):
+            os.mkdir(output_dir)
+        split_and_save(output_dir, buggy, non_buggy, r)
+
+
 if __name__ == '__main__':
-    datasets = ['devign']
-    for dataset_name in datasets:
-        # for p in parts:
-            data_dir = 'data/line_ggnn/'
-            # NOTE: Use jq -c .[] devign-line_ggnn.json > devign-line_ggnn.jsonlines to convert json to jsonlines
-            input_path = data_dir + dataset_name + '-line_ggnn.jsonlines'
-            output_path = data_dir + dataset_name + '/'
-            parser = argparse.ArgumentParser()
-            parser.add_argument('--input', help='Path of the input file', default=input_path)
-            parser.add_argument('--output', help='Output Directory', default=output_path)
-            parser.add_argument('--repeat_count', help='Number of times to be repeated', default=5, type=int)
-            parser.add_argument('--hold_out', help='Hold out extra percentage of data', default=None, type=int)
-            args = parser.parse_args()
-            assert args.hold_out is None or (0 <= args.hold_out <= 100)
-            print(args.input, args.output, args.hold_out)
-
-            # Load data
-            input_data = []
-            with jsonlines.open(args.input) as reader:
-                for obj in tqdm(reader, desc="Reading data"):
-                    input_data.append(obj)
-            print('Finish Reading data, #examples', len(input_data))
-            buggy = []
-            non_buggy = []
-            for i, example in enumerate(tqdm(input_data)):
-                target = example['targets'][0][0]
-                if target == 1:
-                    buggy.append(i)
-                else:
-                    non_buggy.append(i)
-            print('Read data:', 'Buggy', len(buggy), 'Non Buggy', len(non_buggy))
-            if not os.path.exists(args.output):
-                os.mkdir(args.output)
-            
-            # Shuffle
-            random_state = np.random.RandomState(seed=0)
-            random_state.shuffle(buggy)
-            random_state.shuffle(non_buggy)
-
-            # Split up rest of dataset
-            print('Final counts:', 'Buggy', len(buggy), 'Non Buggy', len(non_buggy))
-            for r in range(1, args.repeat_count + 1):
-                output_dir = os.path.join(args.output, 'v' + str(r))
-                if not os.path.exists(output_dir):
-                    os.mkdir(output_dir)
-                split_and_save(output_dir, buggy, non_buggy, r)
+    main()

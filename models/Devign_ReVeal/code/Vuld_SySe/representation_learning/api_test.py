@@ -17,6 +17,25 @@ from baseline_svm import SVMLearningAPI
 import jsonlines
 import tqdm
 
+
+def parse_vulnerable_labels(values):
+    """Return a sorted list of labels that should be treated as vulnerable."""
+    if not values:
+        return [1]
+    labels = set()
+    for value in values:
+        for chunk in value.split(','):
+            part = chunk.strip()
+            if not part:
+                continue
+            try:
+                labels.add(int(part))
+            except ValueError as exc:
+                raise argparse.ArgumentTypeError(f"Invalid label '{part}'") from exc
+    if not labels:
+        raise argparse.ArgumentTypeError('At least one vulnerable label must be provided')
+    return sorted(labels)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--features', default='ggnn', choices=['ggnn', 'wo_ggnn'])
@@ -36,7 +55,19 @@ if __name__ == '__main__':
     parser.add_argument('--holdout_test', action="store_true", help='Do holdout on test set')
     parser.add_argument('--features_bruh')
     parser.add_argument('--model_bruh')
+    parser.add_argument(
+        '--vulnerable-labels',
+        nargs='*',
+        default=None,
+        help='Labels that should be treated as vulnerable (comma- or space-separated integers)',
+    )
     args = parser.parse_args()
+
+    try:
+        vulnerable_labels = set(parse_vulnerable_labels(args.vulnerable_labels))
+    except argparse.ArgumentTypeError as exc:
+        parser.error(str(exc))
+    print('Vulnerable labels:', sorted(vulnerable_labels))
         
     # random seed all
     has_cuda = torch.cuda.is_available()
@@ -63,10 +94,15 @@ if __name__ == '__main__':
     with jsonlines.open(json_data_file) as reader:
         for i, d in enumerate(reader):
             features.append(d['graph_feature'])
-            targets.append(d['target'])
+            target_value = d['target']
+            try:
+                target_int = int(target_value)
+            except (TypeError, ValueError):
+                raise ValueError(f"Unsupported target value '{target_value}' at index {i}")
+            targets.append(1 if target_int in vulnerable_labels else 0)
             ds_indexes.append(i)
     X = numpy.array(features)
-    Y = numpy.array(targets)
+    Y = numpy.array(targets, dtype=numpy.int64)
     ds_indexes = numpy.array(ds_indexes)
     print('Dataset', X.shape, Y.shape, numpy.sum(Y), sep='\t', file=sys.stderr)
     print('=' * 100, file=sys.stderr, flush=True)

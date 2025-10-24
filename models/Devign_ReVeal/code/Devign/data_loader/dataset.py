@@ -16,7 +16,8 @@ class DataEntry:
     def __init__(self, _id, datset, num_nodes, features, edges, target):
         self._id = _id
         self.num_nodes = num_nodes
-        self.target = target
+        self.raw_target = target
+        self.target = datset.normalize_target(self.raw_target)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             self.graph = DGLGraph()
@@ -32,7 +33,8 @@ class DataEntry:
 
 
 class DataSet:
-    def __init__(self, all_src, batch_size=32, n_ident=None, g_ident=None, l_ident=None, dsname=None):
+    def __init__(self, all_src, batch_size=32, n_ident=None, g_ident=None, l_ident=None, dsname=None,
+                 vulnerable_labels=None):
         self.all_examples = []
         self.train_examples = []
         self.valid_examples = []
@@ -51,7 +53,29 @@ class DataSet:
         self.feature_size = 0
         self.dsname = dsname
         self.n_ident, self.g_ident, self.l_ident= load_default_identifiers(n_ident, g_ident, l_ident)
+        self.vulnerable_labels = set()
+        self.set_vulnerable_labels(vulnerable_labels, update_existing=False)
         self.read_dataset(all_src)
+
+    def set_vulnerable_labels(self, vulnerable_labels, update_existing=True):
+        if vulnerable_labels is None:
+            vulnerable_labels = {1}
+        self.vulnerable_labels = set(vulnerable_labels)
+        if update_existing:
+            for example in self.all_examples:
+                raw_value = getattr(example, "raw_target", example.target)
+                example.raw_target = raw_value
+                example.target = self.normalize_target(raw_value)
+
+    def normalize_target(self, raw_target):
+        try:
+            normalized_value = int(raw_target)
+        except (TypeError, ValueError):
+            try:
+                normalized_value = int(float(raw_target))
+            except (TypeError, ValueError):
+                raise ValueError(f"Unable to normalize target value '{raw_target}' to an integer.")
+        return 1.0 if normalized_value in self.vulnerable_labels else 0.0
 
     def initialize_dataset(self):
         self.initialize_train_batch()

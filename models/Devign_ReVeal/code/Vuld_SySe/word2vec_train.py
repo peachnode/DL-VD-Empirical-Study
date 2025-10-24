@@ -29,7 +29,7 @@ def train(args):
             with open(f) as inf:
                 datas = json.load(inf)
             for d in datas:
-                code = d.get("func")
+                code = d.get("code")
                 sentences.append([token.strip() for token in code.split()])
     print(len(sentences), "sentences")
     wvmodel = Word2Vec(sentences, workers=8, vector_size=100, window=10, epochs=100)
