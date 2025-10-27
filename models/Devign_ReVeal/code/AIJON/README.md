@@ -76,6 +76,7 @@ python Devign/main.py \
   --batch_size 256 \
   --train \
   --eval_export \
-  --save_after_ggnn
+  --save_after_ggnn \
+  --vulnerable-labels 0 1 2
 
 ```

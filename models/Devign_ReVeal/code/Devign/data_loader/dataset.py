@@ -1,5 +1,4 @@
 import torch
-from dgl import DGLGraph
 from tqdm import tqdm
 
 import dgl
@@ -7,7 +6,6 @@ from utils import load_default_identifiers, initialize_batch, debug
 from pathlib import Path
 import pandas as pd
 import copy
-import warnings
 import jsonlines
 import json
 import itertools
@@ -18,18 +16,16 @@ class DataEntry:
         self.num_nodes = num_nodes
         self.raw_target = target
         self.target = datset.normalize_target(self.raw_target)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            self.graph = DGLGraph()
-        self.graph.add_nodes(
-            self.num_nodes,
-            data={'features': torch.FloatTensor(features)}
+        src_nodes = torch.as_tensor([s for s, _, _ in edges], dtype=torch.int64)
+        dst_nodes = torch.as_tensor([t for _, _, t in edges], dtype=torch.int64)
+        edge_types = torch.as_tensor(
+            [datset.get_edge_type_number(_type) for _, _type, _ in edges],
+            dtype=torch.int64,
         )
-        for s, _type, t in edges:
-            etype_number = datset.get_edge_type_number(_type)
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                self.graph.add_edge(s, t, data={'etype': torch.LongTensor([etype_number])})
+
+        self.graph = dgl.graph((src_nodes, dst_nodes), num_nodes=self.num_nodes)
+        self.graph.edata['etype'] = edge_types
+        self.graph.ndata['features'] = torch.as_tensor(features, dtype=torch.float32)
 
 
 class DataSet:
