@@ -7,14 +7,50 @@ import seaborn as sns
 from sklearn import manifold
 from sklearn.model_selection import train_test_split
 
-sns.set(rc={"figure.figsize": (11.7, 8.27)})
+sns.set()
+
+DEFAULT_FIGSIZE = (13, 10)
+DEFAULT_DPI = 320
+
+
+def _select_palette(unique_count: int):
+    """Pick a colour palette that offers good contrast for *unique_count* classes."""
+
+    if unique_count <= 10:
+        return sns.color_palette("tab10", n_colors=unique_count)
+    if unique_count <= 20:
+        return sns.color_palette("tab20", n_colors=unique_count)
+    return sns.color_palette("husl", n_colors=unique_count)
 
 
 def _build_palette(labels: np.ndarray):
     unique_labels = np.unique(labels)
-    palette = sns.color_palette("husl", max(len(unique_labels), 1))
+    palette = _select_palette(max(len(unique_labels), 1))
     color_map = {label: palette[idx % len(palette)] for idx, label in enumerate(unique_labels)}
     return color_map, list(unique_labels)
+
+
+def _build_marker_map(labels: np.ndarray):
+    marker_cycle = [
+        "o",
+        "s",
+        "D",
+        "^",
+        "v",
+        "<",
+        ">",
+        "P",
+        "X",
+        "*",
+        "h",
+        "H",
+        "d",
+    ]
+    unique_labels = np.unique(labels)
+    marker_map = {
+        label: marker_cycle[idx % len(marker_cycle)] for idx, label in enumerate(unique_labels)
+    }
+    return marker_map
 
 
 def _resolve_label_name(label: Any, label_map: Mapping[int, str] | None) -> str:
@@ -74,19 +110,41 @@ def plot_embedding(X_org, y, title=None, color_labels=None, label_map: Mapping[i
         with open(metadata_path, "w") as meta_handle:
             json.dump({"color_label_names": label_names_payload}, meta_handle)
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=DEFAULT_FIGSIZE)
     color_map, ordered_labels = _build_palette(display_labels)
-    colors = [color_map[label] for label in display_labels]
-    ax.scatter(X[:, 0], X[:, 1], c=colors, s=18, linewidths=0)
+    marker_map = _build_marker_map(display_labels)
+
+    for label in ordered_labels:
+        mask = display_labels == label
+        ax.scatter(
+            X[mask, 0],
+            X[mask, 1],
+            color=color_map[label],
+            s=26,
+            marker=marker_map[label],
+            edgecolors="black",
+            linewidths=0.15,
+            alpha=0.85,
+            label=label,
+        )
 
     ordered_label_names = _prepare_label_names(ordered_labels, label_map)
 
     if len(ordered_labels) <= 20:
-        legend_handles = [
-            plt.Line2D([], [], marker="o", linestyle="", markersize=6, markerfacecolor=color_map[label],
-                       markeredgecolor="black", label=ordered_label_names[idx])
-            for idx, label in enumerate(ordered_labels)
-        ]
+        legend_handles = []
+        for idx, label in enumerate(ordered_labels):
+            legend_handles.append(
+                plt.Line2D(
+                    [],
+                    [],
+                    marker=marker_map[label],
+                    linestyle="",
+                    markersize=7,
+                    markerfacecolor=color_map[label],
+                    markeredgecolor="black",
+                    label=ordered_label_names[idx],
+                )
+            )
         ax.legend(handles=legend_handles, title="Label", loc="best", frameon=True)
 
     if X.shape[0] <= 400:
@@ -106,7 +164,7 @@ def plot_embedding(X_org, y, title=None, color_labels=None, label_map: Mapping[i
     if title is not None:
         ax.set_title("")
     fig.tight_layout()
-    fig.savefig(str(title) + ".pdf")
+    fig.savefig(str(title) + ".pdf", dpi=DEFAULT_DPI)
     plt.show()
 
 
