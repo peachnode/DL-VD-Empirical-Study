@@ -10,10 +10,10 @@ import numpy
 import os
 import sys
 import torch
-from representation_learning_api import RepresentationLearningModel
-from models import MetricLearningModel
-from trainer import evaluate
-from baseline_svm import SVMLearningAPI
+from .representation_learning_api import RepresentationLearningModel
+from .models import MetricLearningModel
+from .trainer import evaluate
+from .baseline_svm import SVMLearningAPI
 import jsonlines
 import tqdm
 

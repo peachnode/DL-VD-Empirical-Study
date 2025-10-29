@@ -54,15 +54,15 @@ LABEL_MAP = {
     "WRONG_FORMAT": 5,
     "INSERT_ERROR": 6,
 }
-```
-python scripts/split_data_original.py \
-  --input data/aijon/full_experiment_real_data_processed/aijon-line-ggnn.jsonlines \
-  --output data/aijon/full_experiment_real_data_processed \
-  --repeat_count 1 \
-  --vulnerable-labels 0,1,2
 
 ```
+python scripts/generate_splits_from_lists.py \
+  --dataset data/aijon/full_experiment_real_data_processed/aijon-line-ggnn.jsonlines \
+  --split-dir data/aijon \
+  --output data/aijon/full_experiment_real_data_processed
 
+```
+-> creates splits.csv
 ```
 python Devign/main.py \
   --dataset aijon \
@@ -77,6 +77,31 @@ python Devign/main.py \
   --train \
   --eval_export \
   --save_after_ggnn \
-  --vulnerable-labels 0 1 2
+  --vulnerable-labels 4 \
+  --max_steps 6000 \
+  --dev_every 128 \
+  --max_patience 25
+
+```
+
+```
+python -m Vuld_SySe.representation_learning.api_test \
+  --input_dir data/aijon/full_experiment_real_data_processed \
+  --fold 1 --seed 1 --features ggnn \
+  --train --eval_export 
+
+
+```
+-> saves the learned metric-learning weights under models/aijon/reveal/v{fold}/{seed}/RepresentationLearningModel.bin
+-> models/Devign_ReVeal/code/data/aijon/full_experiment_real_data_processed/v1/eval_export_reveal_1.csv
+
+
+```
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+
+python -m Vuld_SySe.representation_learning.tsne_generation_verum \
+  --input-dir data/aijon/full_experiment_real_data_processed \
+  --fold 1 --seed 1 --split test \
+  --output-dir tsnes/aijon --vulnerable-labels 1
 
 ```

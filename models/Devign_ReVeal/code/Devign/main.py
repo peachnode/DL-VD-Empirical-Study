@@ -49,6 +49,13 @@ if __name__ == '__main__':
     parser.add_argument('--vulnerable-labels', type=int, nargs='+', default=[1],
                         help='Space separated list of labels considered vulnerable. '
                              'Provide the same set used when generating dataset splits.')
+    parser.add_argument('--max_steps', type=int, default=None,
+                        help='Maximum number of training iterations before stopping.')
+    parser.add_argument('--dev_every', type=int, default=None,
+                        help='Frequency (in steps) to evaluate on the validation split.')
+    parser.add_argument('--max_patience', type=int, default=None,
+                        help='Number of consecutive validation evaluations without improvement '
+                             'before early stopping.')
     parser.add_argument('--model_bruh')
     parser.add_argument('--mega_cool_mode', action="store_true")
     parser.add_argument('--shport', action="store_true")
@@ -68,6 +75,22 @@ if __name__ == '__main__':
         print('Warning!!! Graph Embed dimension should be at least equal to the feature dimension.\n'
               'Setting graph embedding size to feature size', file=sys.stderr)
         args.graph_embed_size = args.feature_size
+
+    if args.model_type == 'ggnn':
+        default_max_steps = 500
+        default_dev_every = 1
+        default_max_patience = 50
+    else:
+        default_max_steps = 100
+        default_dev_every = 1
+        default_max_patience = 5
+
+    if args.max_steps is None:
+        args.max_steps = default_max_steps
+    if args.dev_every is None:
+        args.dev_every = default_dev_every
+    if args.max_patience is None:
+        args.max_patience = default_max_patience
 
     input_dir = args.input_dir
     processed_data_path = os.path.join(input_dir, 'processed.bin')
@@ -121,9 +144,9 @@ if __name__ == '__main__':
             os.makedirs(model_dir)
         assert has_cuda
         # train(model=model, dataset=dataset, max_steps=3, dev_every=1,
-        train(model=model, dataset=dataset, max_steps=1000000, dev_every=64, log_every=None,
+        train(model=model, dataset=dataset, max_steps=args.max_steps, dev_every=args.dev_every, log_every=None,
             loss_function=loss_function, optimizer=optim,
-            save_path=model_dir + '/GGNNSumModel', max_patience=100)
+            save_path=model_dir + '/GGNNSumModel', max_patience=args.max_patience)
     if args.holdout or args.holdout_test:
         assert args.holdout != args.holdout_test
         from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score

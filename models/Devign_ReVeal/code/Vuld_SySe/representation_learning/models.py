@@ -4,7 +4,7 @@ from sklearn.metrics import accuracy_score as acc, precision_score as pr, recall
 from torch import nn
 from torch.optim import Adam
 
-from tsne import plot_embedding
+from .tsne import plot_embedding
 
 
 class MetricLearningModel(nn.Module):

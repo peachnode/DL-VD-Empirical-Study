@@ -4,12 +4,12 @@ import os
 import numpy as np
 import sys
 import torch
-from graph_dataset import DataSet
+from .graph_dataset import DataSet
 from sklearn.metrics import accuracy_score as acc, precision_score as pr, recall_score as rc, f1_score as f1
 from tqdm import tqdm
-from tsne import plot_embedding
+from .tsne import plot_embedding
 
-from models import MetricLearningModel
+from .models import MetricLearningModel
 
 
 def train(model, dataset, optimizer, num_epochs, model_dir, max_patience=5,

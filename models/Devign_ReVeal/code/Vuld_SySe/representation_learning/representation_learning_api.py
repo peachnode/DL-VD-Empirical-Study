@@ -4,9 +4,9 @@ import torch
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import train_test_split
 from torch.optim import Adam
-from graph_dataset import DataSet
-from models import MetricLearningModel
-from trainer import train, predict, predict_proba, evaluate as evaluate_from_model
+from .graph_dataset import DataSet
+from .models import MetricLearningModel
+from .trainer import train, predict, predict_proba, evaluate as evaluate_from_model
 
 
 class RepresentationLearningModel(BaseEstimator):
