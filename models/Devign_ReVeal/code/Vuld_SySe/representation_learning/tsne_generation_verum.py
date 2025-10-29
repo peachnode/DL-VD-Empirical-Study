@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Dict, Iterable, List, Mapping, Sequence, Tuple
 
 import numpy as np
 
@@ -20,6 +20,18 @@ from Vuld_SySe.representation_learning.representation_learning_api import (
 )
 from Vuld_SySe.representation_learning.trainer import show_representation
 from Vuld_SySe.representation_learning.tsne import plot_embedding
+
+LABEL_MAP: Dict[str, int] = {
+    "NOT_HELPFUL": 0,
+    "SATURATED": 1,
+    "UNREACHED": 2,
+    "BUILD_ERROR": 3,
+    "SUCCESS": 4,
+    "WRONG_FORMAT": 5,
+    "INSERT_ERROR": 6,
+}
+
+LABEL_NAME_BY_ID: Mapping[int, str] = {value: key for key, value in LABEL_MAP.items()}
 
 
 def parse_vulnerable_labels(values: Sequence[str] | None) -> List[int]:
@@ -45,8 +57,8 @@ def parse_vulnerable_labels(values: Sequence[str] | None) -> List[int]:
     return sorted(labels)
 
 
-def load_records(path: Path, *, rng: np.random.Generator) -> List[Dict]:
-    """Load the JSON or JSONL records stored at *path* and shuffle them."""
+def load_records(path: Path, *, rng: np.random.Generator, shuffle: bool = False) -> List[Dict]:
+    """Load the JSON or JSONL records stored at *path* and optionally shuffle them."""
 
     if not path.exists():
         raise FileNotFoundError(path)
@@ -60,24 +72,90 @@ def load_records(path: Path, *, rng: np.random.Generator) -> List[Dict]:
         with path.open("r", encoding="utf-8") as handle:
             records = json.load(handle)
 
-    rng.shuffle(records)
+    if shuffle:
+        rng.shuffle(records)
     return records
 
 
-def read_split(path: Path, *, rng: np.random.Generator) -> Tuple[np.ndarray, np.ndarray]:
-    """Return feature and target arrays loaded from *path*."""
+def read_split(path: Path, *, rng: np.random.Generator) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return feature, target, and raw-label arrays loaded from *path*."""
 
     features: List[Sequence[float]] = []
     targets: List[int] = []
+    raw_targets: List[int] = []
 
-    for entry in load_records(path, rng=rng):
+    for entry in load_records(path, rng=rng, shuffle=False):
         try:
             features.append(entry["graph_feature"])
             targets.append(int(entry["target"]))
+            raw_targets.append(int(entry.get("raw_target", entry["target"])))
         except KeyError as exc:
             raise KeyError(f"Missing key {exc!s} in record from {path}") from exc
 
-    return np.asarray(features, dtype=np.float32), np.asarray(targets, dtype=np.int64)
+    return (
+        np.asarray(features, dtype=np.float32),
+        np.asarray(targets, dtype=np.int64),
+        np.asarray(raw_targets, dtype=np.int64),
+    )
+
+
+def _coerce_label(value) -> int:
+    while isinstance(value, (list, tuple)):
+        if not value:
+            raise ValueError("Encountered an empty label sequence while extracting raw targets")
+        value = value[0]
+    if isinstance(value, (np.integer, int, bool)):
+        return int(value)
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Encountered an empty label string while extracting raw targets")
+        try:
+            return int(stripped)
+        except ValueError:
+            return int(float(stripped))
+    raise TypeError(f"Unsupported label type: {type(value)!r}")
+
+
+def _extract_raw_label(entry: Dict) -> int:
+    if "raw_target" in entry:
+        return _coerce_label(entry["raw_target"])
+    if "label" in entry:
+        return _coerce_label(entry["label"])
+    if "targets" in entry:
+        return _coerce_label(entry["targets"])
+    if "target" in entry:
+        return _coerce_label(entry["target"])
+    raise KeyError("Record does not contain a recognised label field")
+
+
+def load_full_graph_labels(dataset_dir: Path, *, rng: np.random.Generator) -> np.ndarray | None:
+    """Load raw labels from the cached full-graph dataset if available."""
+
+    dataset_root = dataset_dir.parent
+    dataset_name = dataset_root.parent.name if dataset_root.parent != dataset_root else dataset_root.name
+    candidates = [
+        dataset_root / f"{dataset_name}-full_graph.jsonlines",
+        dataset_root / f"{dataset_name}-full_graph.jsonl",
+        dataset_root / f"{dataset_name}-full_graph.json",
+        dataset_root / "full_graph.jsonlines",
+        dataset_root / "full_graph.jsonl",
+        dataset_root / "full_graph.json",
+    ]
+
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        records = load_records(candidate, rng=rng, shuffle=False)
+        try:
+            labels = [_extract_raw_label(record) for record in records]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"Failed to extract raw labels from {candidate}") from exc
+        return np.asarray(labels, dtype=np.int64)
+
+    return None
 
 
 def load_dataset(
@@ -87,7 +165,7 @@ def load_dataset(
     vulnerable_labels: Iterable[int],
     features_suffix: str | None,
     rng: np.random.Generator,
-) -> Tuple[np.ndarray, np.ndarray, Dict[str, np.ndarray]]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, np.ndarray]]:
     """Load the consolidated GGNN features and return split views."""
 
     if features_suffix:
@@ -95,10 +173,19 @@ def load_dataset(
     else:
         features_file = dataset_dir / f"GGNNinput_graph_ggnn_{seed}.jsonlines"
 
-    features, raw_targets = read_split(features_file, rng=rng)
+    features, stored_targets, raw_targets = read_split(features_file, rng=rng)
+
+    full_graph_raw = load_full_graph_labels(dataset_dir, rng=rng)
+    if full_graph_raw is not None:
+        if full_graph_raw.shape[0] != features.shape[0]:
+            raise ValueError(
+                "Mismatch between GGNN feature count and full-graph label count: "
+                f"{features.shape[0]} features vs {full_graph_raw.shape[0]} labels."
+            )
+        raw_targets = full_graph_raw
 
     vulnerable = set(vulnerable_labels)
-    targets = np.asarray([1 if int(label) in vulnerable else 0 for label in raw_targets], dtype=np.int64)
+    targets = np.asarray([1 if int(label) in vulnerable else 0 for label in stored_targets], dtype=np.int64)
 
     with (dataset_dir / "splits_reveal.json").open("r", encoding="utf-8") as handle:
         raw_splits = json.load(handle)
@@ -111,7 +198,7 @@ def load_dataset(
             raise KeyError(f"Unknown split '{split_name}' in splits_reveal.json") from exc
 
     sliced_indices = {name: np.asarray(idxs, dtype=np.int64) for name, idxs in indices.items()}
-    return features, targets, sliced_indices
+    return features, targets, raw_targets, sliced_indices
 
 
 def ensure_output(target: Path) -> None:
@@ -189,7 +276,7 @@ def main() -> None:
     if not dataset_dir.exists():
         raise FileNotFoundError(dataset_dir)
 
-    features, targets, split_indices = load_dataset(
+    features, targets, raw_targets, split_indices = load_dataset(
         dataset_dir,
         seed=args.seed,
         vulnerable_labels=vulnerable_labels,
@@ -203,14 +290,23 @@ def main() -> None:
     if split_indices[args.split].size == 0:
         raise ValueError(f"Split '{args.split}' is empty; cannot generate a t-SNE plot")
 
-    selected_features = features[split_indices[args.split]]
-    selected_targets = targets[split_indices[args.split]]
+    selected_indices = split_indices[args.split]
+    selected_features = features[selected_indices]
+    selected_targets = targets[selected_indices]
+    selected_raw_targets = raw_targets[selected_indices]
+    selected_raw_targets_list = selected_raw_targets.tolist()
 
     output_dir = Path(args.output_dir)
     ggnn_title = output_dir / f"{args.split}-ggnn"
     ensure_output(ggnn_title)
     print(f"Saving GGNN t-SNE plot to {ggnn_title}")
-    plot_embedding(selected_features, selected_targets, str(ggnn_title))
+    plot_embedding(
+        selected_features,
+        selected_targets,
+        str(ggnn_title),
+        color_labels=selected_raw_targets,
+        label_map=LABEL_NAME_BY_ID,
+    )
 
     model_dir = (
         Path(args.model_dir)
@@ -255,13 +351,20 @@ def main() -> None:
     representation_title = output_dir / f"{args.split}-representation"
     ensure_output(representation_title)
     print(f"Saving representation t-SNE plot to {representation_title}")
-    show_representation(
-        model.model,
-        model.dataset.get_next_test_batch,
-        model.dataset.initialize_test_batches(),
-        cuda_device,
-        str(representation_title),
-    )
+    previous_shuffle = model.dataset.shuffle
+    model.dataset.shuffle = False
+    try:
+        show_representation(
+            model.model,
+            model.dataset.get_next_test_batch,
+            model.dataset.initialize_test_batches(),
+            cuda_device,
+            str(representation_title),
+            color_labels=selected_raw_targets_list,
+            label_map=LABEL_NAME_BY_ID,
+        )
+    finally:
+        model.dataset.shuffle = previous_shuffle
 
 
 if __name__ == "__main__":

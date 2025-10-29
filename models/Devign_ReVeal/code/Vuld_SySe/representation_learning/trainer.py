@@ -138,11 +138,23 @@ def evaluate(model, iterator_function, _batch_count, cuda_device, output_buffer=
                f1(expectations, predictions) * 100,
 
 
-def show_representation(model, iterator_function, _batch_count, cuda_device, name, output_buffer=sys.stderr):
+def show_representation(
+    model,
+    iterator_function,
+    _batch_count,
+    cuda_device,
+    name,
+    output_buffer=sys.stderr,
+    color_labels=None,
+    label_map=None,
+):
     model.eval()
     with torch.no_grad():
         representations = []
         expected_targets = []
+        display_labels = []
+        colour_sequence = list(color_labels) if color_labels is not None else None
+        offset = 0
         batch_generator = range(_batch_count)
         if output_buffer is not None:
             batch_generator = tqdm(batch_generator)
@@ -156,7 +168,21 @@ def show_representation(model, iterator_function, _batch_count, cuda_device, nam
             print(repr.shape)
             representations.extend(repr.tolist())
             expected_targets.extend(targets.numpy().tolist())
+            if colour_sequence is not None:
+                batch_size = targets.size(0)
+                batch_labels = colour_sequence[offset: offset + batch_size]
+                if len(batch_labels) != batch_size:
+                    raise ValueError("Colour label count does not match the produced representations")
+                display_labels.extend(batch_labels)
+                offset += batch_size
         model.train()
         print(np.array(representations).shape)
         print(np.array(expected_targets).shape)
-        plot_embedding(representations, expected_targets, title=name)
+        labels_for_plot = display_labels if colour_sequence is not None else None
+        plot_embedding(
+            representations,
+            expected_targets,
+            title=name,
+            color_labels=labels_for_plot,
+            label_map=label_map,
+        )
