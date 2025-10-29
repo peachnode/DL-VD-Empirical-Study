@@ -9,6 +9,12 @@ import os
 import sys
 import jsonlines
 import tqdm
+import clang.cindex
+import clang.enumerations
+import csv
+import numpy as np
+from graphviz import Digraph
+
 
 
 # In[6]:
@@ -227,10 +233,7 @@ l_funcs = ['StrNCat', 'getaddrinfo', '_ui64toa', 'fclose', 'pthread_mutex_lock',
 
 import os
 import json
-import clang.cindex
-import clang.enumerations
-import csv
-import numpy as np
+
 import os
 
 
@@ -247,8 +250,6 @@ except:
 # In[9]:
 
 
-import os, sys, argparse
-from graphviz import Digraph
 
 
 def read_csv(csv_file_path):
